@@ -1,0 +1,16 @@
+name: 'docker-cleanup'
+description: 'Cleanup unused images'
+disabled: false
+triggers:
+  - timed: "H 22 * * *"
+builders:
+  - shell: |
+      docker ps -f status=exited -q | xargs --no-run-if-empty docker rm || true
+      docker images -q | xargs --no-run-if-empty docker rmi || true
+wrappers:
+  - timestamps
+logrotate:
+  daysToKeep: -1
+  numToKeep: 10
+  artifactDaysToKeep: -1
+  artifactNumToKeep: -1

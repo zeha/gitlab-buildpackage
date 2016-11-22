@@ -1,0 +1,35 @@
+name: 'docker-images'
+description: 'Update images'
+disabled: false
+triggers:
+  - timed: "H 23 * * *"
+  - gitlab:
+      trigger-push: true
+      trigger-merge-request: false
+      trigger-open-merge-request-push: 'never'
+      set-build-description: true
+      add-note-merge-request: false
+      add-ci-message: false
+      include-branches:
+        - 'master'
+scm:
+  - git:
+      url: 'git@github.com:zeha/gitlab-buildpackage.git'
+      name: origin
+      refspec: +refs/heads/*:refs/remotes/origin/*
+      wipe-workspace: false
+      skip-tag: true
+      ignore-notify: true
+      branches:
+        - origin/master
+builders:
+  - shell: |
+      ./fetch-sources
+      DOCKER_BUILD_OPTS=--no-cache ./publish
+wrappers:
+  - timestamps
+logrotate:
+  daysToKeep: -1
+  numToKeep: 10
+  artifactDaysToKeep: -1
+  artifactNumToKeep: -1
