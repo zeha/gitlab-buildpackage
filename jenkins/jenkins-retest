@@ -1,0 +1,97 @@
+#!/usr/bin/env python
+
+import os
+import sys
+from zipfile import ZipFile
+import subprocess
+
+import requests
+
+ZIPNAME = 'artifacts.zip'
+BUILD_REF = os.environ.get('BUILD_REF', 'master')
+
+CHECKOUT_SUBDIR = 'source'
+DOCKER_WORKROOT = '/build'
+DOCKER_PROJECT_DIR = os.path.join(DOCKER_WORKROOT, CHECKOUT_SUBDIR)
+DOCKER_IMAGE = 'some-gitlab-registry.example.org/gitlab-buildpackage:with-testtools'
+DOCKER = ['docker', 'run', '--env-file', '%(ENVFILE)s', '--workdir', DOCKER_PROJECT_DIR,
+          '--volume', '%(WORKSPACE)s:%(DOCKER_WORKROOT)s:rw',
+          '--rm',
+          DOCKER_IMAGE]
+
+ENVTPL = """
+CI_PROJECT_DIR=%(DOCKER_PROJECT_DIR)s
+CI_BUILD_REF_NAME=%(BUILD_REF)s
+"""
+
+GITLAB_TOKEN = os.environ['GITLAB_TOKEN']
+WORKSPACE = os.environ['WORKSPACE']
+JENKINS_SOURCE = os.path.join(WORKSPACE, 'source')
+ENVFILE = os.path.join(WORKSPACE, '.env')
+
+
+# disable output buffering
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
+sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', 0)
+
+
+def run():
+    git_remotes = subprocess.check_output(['git', 'remote', '-v'], cwd=JENKINS_SOURCE)
+    git_remote_url = git_remotes.splitlines()[0].split()[1].strip().rsplit('.git')[0]
+    gitlab_api = git_remote_url.split(':')[0].replace('git@', 'https://') + '/api/v3'
+    project_fragment = git_remote_url.split(':')[1].replace('/', '%2F')
+    print ':: Found project %s gitlab_api %s' % (project_fragment, gitlab_api)
+
+    sess = requests.Session()
+    sess.verify = False
+    auth = {'private_token': GITLAB_TOKEN}
+    project = sess.get("%s/projects/%s" % (gitlab_api, project_fragment), data=auth).json()
+    project_api = "%s/projects/%s/" % (gitlab_api, project['id'])
+
+    try:
+        print ':: Downloading artifacts'
+        with open(ZIPNAME, 'w') as f:
+            f.write(sess.get(project_api + "builds/artifacts/%s/download?job=package" % BUILD_REF,
+                             data=auth).content)
+
+        print ':: Unpacking artifacts'
+        with ZipFile(ZIPNAME, 'r') as f:
+            f.extractall(JENKINS_SOURCE)
+
+    finally:
+        os.unlink(ZIPNAME)
+
+
+    expansions = {
+        'DOCKER_PROJECT_DIR': DOCKER_PROJECT_DIR,
+        'BUILD_REF': BUILD_REF,
+        'WORKSPACE': WORKSPACE,
+        'DOCKER_WORKROOT': DOCKER_WORKROOT,
+        'JENKINS_SOURCE': JENKINS_SOURCE,
+        'ENVFILE': ENVFILE,
+    }
+
+    with open(ENVFILE, 'w') as f:
+        env_content = ENVTPL % expansions
+        print ':: ENV file at %s:' % ENVFILE
+        print env_content
+        f.write(env_content)
+
+    run_scripts = [['build-test-nose']]
+    #if os.path.exists(os.path.join(JENKINS_SOURCE, 'ui-tests')):
+    #    run_scripts.append(['build-test-ui'])
+
+    try:
+        for run_script in run_scripts:
+            docker_run_script = DOCKER + run_script
+            expanded = [arg % expansions for arg in docker_run_script]
+            print ':: Running', ' '.join(expanded)
+            subprocess.check_call(expanded, cwd=WORKSPACE)
+    finally:
+        cleanup = ['chown', '-R', str(os.getuid()), DOCKER_PROJECT_DIR]
+        expanded = [arg % expansions for arg in DOCKER + cleanup]
+        print ':: Running', ' '.join(expanded)
+        subprocess.check_call(expanded, cwd=WORKSPACE)
+
+
+sys.exit(run())
