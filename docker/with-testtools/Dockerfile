@@ -1,4 +1,4 @@
-FROM some-gitlab-registry.example.org/dev/build:base
+FROM some-gitlab-registry.example.org/gitlab-buildpackage:base
 
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
 		python-nose \

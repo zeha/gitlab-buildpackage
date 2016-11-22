@@ -1,4 +1,4 @@
-FROM some-gitlab-registry.example.org/dev/build:base
+FROM some-gitlab-registry.example.org/gitlab-buildpackage:base
 
 RUN adduser --group --system build
 RUN git config --global user.email 'gitlab@example.org' && git config --global user.name "gitlab autobuild"

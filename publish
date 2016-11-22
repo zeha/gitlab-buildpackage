@@ -1,6 +1,6 @@
 #!/bin/bash
 set -ex
-REGISTRY_PATH=some-gitlab-registry.example.org/dev/build
+REGISTRY_PATH=some-gitlab-registry.example.org/gitlab-buildpackage
 DOCKER_OPTS=${DOCKER_OPTS:-}
 DOCKER_BUILD_OPTS=${DOCKER_BUILD_OPTS:-}
 cd docker
