@@ -3,9 +3,9 @@ Docker image build scripts
 
 To build and upload to gitlab:
 
-  docker login some-gitlab-registry.example.org
-  ./fetch-sources  # downloads repository keys for apt
-  ./publish
+    docker login some-gitlab-registry.example.org
+    ./fetch-sources  # downloads repository keys for apt
+    ./publish
 
 
 Assumptions
