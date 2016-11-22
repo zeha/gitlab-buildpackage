@@ -1,0 +1,17 @@
+#!/bin/bash
+. /usr/local/sbin/build-lib
+elog "branch: $CI_BUILD_REF_NAME, short name: $branch, build for: $DIST, repository: $REPOS"
+ls -la
+pwd
+
+configure_apt
+set -e
+
+install_artifact_debs
+install_redis
+
+elog 'Installing nose'
+apt_install python-coverage python-mock python-nose
+
+elog 'Running nosetests'
+nosetests --with-xunit --xunit-file=nosetests.xml -v

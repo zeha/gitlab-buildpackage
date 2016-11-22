@@ -1,0 +1,74 @@
+#!/bin/bash
+. /usr/local/sbin/build-lib
+elog "branch: $CI_BUILD_REF_NAME, short name: $branch, build for: $DIST, repository: $REPOS"
+
+ORIG_VERSION=$(dpkg-parsechangelog -SVersion --count 1)
+NEW_VERSION=${ORIG_VERSION}+0~$(date -u +%Y%m%d%H%M%S).${CI_BUILD_ID}+${branch}+${DIST}~1.g$(git rev-parse --short HEAD)
+elog "Making changelog for version ${NEW_VERSION}"
+dch --no-auto-nmu -v "${NEW_VERSION}" "Snapshot build for ${CI_BUILD_REF}."
+check_err "dch -v failed"
+dch --no-auto-nmu -r --force-distribution --distribution "${REPOS}" ""
+check_err "dch -r failed"
+git commit -m "Update changelog" debian/changelog
+head debian/changelog
+
+configure_apt
+apt_update
+
+elog 'Relocating source into source/ folder'
+rm -rf .source && mkdir .source
+mv ./* ./.git* .source/ && mv .source source
+
+elog 'git clean -fdx && git reset --hard'
+(cd source && git clean -fdx && git reset --hard)
+
+elog 'Installing builddeps'
+mk-build-deps "${CI_PROJECT_DIR}/source/debian/control" >mk-build-deps.log 2>&1
+if [ $? != 0 ]; then
+  eerr "mk-build-deps has failed, log follows:"
+  cat mk-build-deps.log
+  exit 1
+fi
+# stolen from mk-build-deps:
+install_deb_with_deps *-build-deps_*.deb
+check_err "installing builddeps failed, see above"
+rm -f *-build-deps_*.deb
+# done installing builddeps
+
+elog 'Building'
+cd "${CI_PROJECT_DIR}/source"
+chown -R build: ..
+chpst \
+    -e /usr/local/gbp-envdir \
+    -U build \
+    -u build \
+    gbp buildpackage --git-ignore-branch --git-builder="dpkg-buildpackage -rfakeroot -us -uc"
+check_err "package build has failed, see above."
+
+cd "${CI_PROJECT_DIR}"
+mkdir -p results
+echo "$REPOS" > results/target-distribution
+
+echo
+elog "Resulting files follow:"
+ls -la
+
+elog "Uploading to repository ..."
+FILES=$(find . -type f -maxdepth 1)
+UKHF=$(mktemp -d /tmp/ukh.XXX)/ukhfile
+chmod 0600 /etc/dockerbuild.id_rsa
+REPOREMOTE=dockerbuild@repo.example.org
+on_repo_target() {
+  ssh -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=$UKHF" -i /etc/dockerbuild.id_rsa "$REPOREMOTE" \
+  "$@"
+}
+MYTMP=$(on_repo_target mktemp -d /tmp/incomingXXXXXX)
+for filename in $FILES results/target-distribution; do
+  scp -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=$UKHF" -i /etc/dockerbuild.id_rsa \
+    "$filename" \
+    "$REPOREMOTE":"$MYTMP/"
+done
+on_repo_target incoming-dockerbuild "$MYTMP"
+
+# Move back (most) files from source/ so users can use them as artificats.
+mv source/* source/.git* .

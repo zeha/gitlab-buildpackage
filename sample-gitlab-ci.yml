@@ -1,0 +1,24 @@
+stages:
+  - pretest
+  - build
+  - test
+pep8:
+  stage: pretest
+  script: build-pretest-pep8
+package:
+  stage: build
+  script: build-build-package
+  artifacts:
+    paths:
+    - '*_*.gz'
+    - '*_*.xz'
+    - '*_*.dsc'
+    - '*_amd64.changes'
+    - '*.deb'
+    - 'results/*'
+lintian:
+  stage: test
+  script: build-test-lintian
+nose:
+  stage: test
+  script: build-test-nose

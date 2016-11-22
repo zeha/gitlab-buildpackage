@@ -1,0 +1,14 @@
+#!/bin/bash
+. /usr/local/sbin/build-lib
+
+configure_apt
+set -e
+
+install_artifact_debs
+install_redis
+
+apt_install aida-ui-testing default-jre
+
+mkdir -p results
+elog 'Running aida-uitest-runner'
+aida-uitest-runner

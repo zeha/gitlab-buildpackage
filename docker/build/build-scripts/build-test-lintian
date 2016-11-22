@@ -1,0 +1,2 @@
+#!/bin/sh
+exec lintian --color=always --info *.dsc *.changes

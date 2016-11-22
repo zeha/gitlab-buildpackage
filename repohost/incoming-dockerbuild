@@ -1,0 +1,38 @@
+#!/bin/bash
+INCOMINGDIR="$1"
+
+if [ ! -d "$INCOMINGDIR" ]; then
+  echo "Directory $INCOMINGDIR is not a directory."
+  exit 1
+fi
+
+if [ $(id -u -n) != "gitlab-runner" ]; then
+  chmod 755 -- "$INCOMINGDIR"
+  sudo -n -u gitlab-runner "$0" "$@"
+  RC=$?
+  rm -rf -- "$INCOMINGDIR"
+  exit $RC
+fi
+
+read REPOS < "$INCOMINGDIR"/target-distribution
+if [ -z "$REPOS" ]; then
+  echo "E: target-distribution was empty"
+  exit 1
+fi
+
+generate-reprepro-codename "${REPOS}"
+
+. /etc/jenkins/debian_glue
+REPOSITORY=${DEFAULT_REPOSITORY:-/srv/repository}
+
+SOURCE_PACKAGE=$(basename "$INCOMINGDIR"/*.changes | awk -F_ '{ print $1 }')
+
+set -e
+reprepro -A source -b "${REPOSITORY}" ${REPREPRO_OPTS} remove "${REPOS}" "${SOURCE_PACKAGE}"
+
+REPREPRO_OPTS='-v --waitforlock 1000'
+echo "*** Including packages in repository $REPOS ***"
+reprepro -b "${REPOSITORY}" \
+    --ignore=wrongdistribution --ignore=uploaders --ignore=surprisingbinary \
+    include "${REPOS}" "$INCOMINGDIR"/*.changes
+

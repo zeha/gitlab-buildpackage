@@ -1,0 +1,11 @@
+#!/bin/bash
+. /usr/local/sbin/build-lib
+
+configure_apt
+apt_update
+set -e
+
+apt_install aida-i18n
+
+mkdir -p results
+aida-i18n-gettext-xunit po/*.po

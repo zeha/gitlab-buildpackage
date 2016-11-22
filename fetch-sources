@@ -1,0 +1,16 @@
+#!/bin/bash
+REPOSITORY_EXTRA_KEYS='http://somerepo.example.org/repo.keys'
+
+# GNU coreutils vs. BSD/Darwin
+MD5="md5sum -"
+if which md5 >/dev/null; then
+  MD5="md5"
+fi
+
+cd docker/base/
+rm -rf keys
+mkdir keys
+cd keys
+for key in $REPOSITORY_EXTRA_KEYS; do
+  curl -s $key | gpg --dearmor > $(echo $key | $MD5 | awk '{print $1}').gpg
+done

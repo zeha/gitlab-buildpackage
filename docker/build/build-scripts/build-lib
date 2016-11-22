@@ -1,0 +1,108 @@
+#!/bin/bash
+elog() {
+  echo -e "\e[1m\e[36m :::" "$@" "\e[0m\e[39m"
+}
+eerr() {
+  echo -e "\e[1m\e[33m !!!" "$@" "\e[0m\e[39m"
+}
+check_err() {
+  RC=$?
+  if [ $RC != 0 ]; then
+    eerr "$@"
+    exit $RC
+  fi
+}
+
+if [ -z "$CI_PROJECT_DIR" ]; then
+  eerr "CI_PROJECT_DIR not set, aborting."
+  exit 1
+fi
+
+APT_OPTIONS='-q -o "Dpkg::Options::=--force-confdef" -o "Dpkg::Options::=--force-confold" -o=Dpkg::Use-Pty=0'
+
+export LC_ALL="C.UTF-8"
+export LANG="C.UTF-8"
+export DEBIAN_FRONTEND="noninteractive"
+export DEBIAN_PRIORITY=critical
+export EMAIL='gitlab@example.org'
+export DEBFULLNAME='example.org automated build'
+
+branch=$(echo $CI_BUILD_REF_NAME | sed -e 's!origin/!!; s!f/!!; s!u/!!; s!_!!g; s!-!!g;')
+if [ -z "$branch" ]; then
+  eerr "Made branch is empty, aborting. Probably CI_BUILD_REF_NAME was empty, too."
+  exit 1
+fi
+export DIST=${DIST:-jessie}
+export REPOS="$branch-$DIST"
+
+
+install_deb_with_deps() {
+  pkgname=$(echo "$1" | awk -F_ '{print $1}')
+  dpkg --force-depends --force-conflicts -i "$1" || true
+  aptitude \
+        -y \
+        --without-recommends -o APT::Install-Recommends=false \
+        -o Aptitude::ProblemResolver::StepScore=100 \
+        -o "Aptitude::ProblemResolver::Hints::KeepDummy=reject ${pkgname} :UNINST" \
+        -o Aptitude::ProblemResolver::Keep-All-Level=55000 \
+        -o Aptitude::ProblemResolver::Remove-Essential-Level=maximum \
+        install \
+        ${pkgname}
+}
+
+configure_apt() {
+  elog 'Configuring APT'
+  rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*
+  cat >/etc/apt/sources.list <<EOT
+deb http://ftp.at.debian.org/debian ${DIST} main contrib non-free
+deb-src http://ftp.at.debian.org/debian ${DIST} main contrib non-free
+deb http://security.debian.org/ ${DIST}/updates main contrib non-free
+deb-src http://security.debian.org/ ${DIST}/updates main contrib non-free
+EOT
+  if [ -n "${REPOS:-}" ] && [ "${branch}" != "master" ]; then
+    cat >/etc/apt/sources.list.d/branch.list <<EOT
+deb http://repo.example.org/debian/ ${REPOS} main
+deb-src http://repo.example.org/debian/ ${REPOS} main
+EOT
+  fi
+  sed -e 's/^/    /' /etc/apt/sources.list $(find /etc/apt/sources.list.d -type f)
+}
+
+apt_update() {
+  elog 'Updating packages'
+  time apt-get update -q
+  time apt-get upgrade -y $APT_OPTIONS
+  check_err "Update using apt-get failed"
+}
+
+install_artifact_debs() {
+  echo 'APT::Get::AllowUnauthenticated "true";' > /etc/apt/apt.conf.d/unauth.conf
+  elog "Making local repo"
+  packages=$(find . -iname '*.deb' -printf '%f\n' | awk -F_ '{print $1"="$2}')
+  rm -rf .apt && mkdir .apt
+  (
+    cd .apt
+    apt-ftparchive packages .. > Packages
+    apt-ftparchive release .. > Release
+  )
+  cat >/etc/apt/sources.list.d/local.list <<EOT
+deb file:///${CI_PROJECT_DIR}/.apt/ ./
+EOT
+
+  apt_update
+
+  elog "Installing built packages ${packages}"
+  time apt-get install -y $APT_OPTIONS ${packages}
+  check_err "installing package failed, see above"
+}
+
+install_redis() {
+  # Assume already installed by Dockerfile.
+  elog 'Starting redis-server'
+  service redis-server start
+}
+
+apt_install() {
+  elog "Installing $@"
+  time apt-get install -y $APT_OPTIONS "$@"
+}

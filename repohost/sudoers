@@ -1,0 +1,1 @@
+dockerbuild ALL= (gitlab-runner) NOPASSWD: /usr/local/bin/incoming-dockerbuild

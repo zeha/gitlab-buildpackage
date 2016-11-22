@@ -1,0 +1,18 @@
+#!/bin/bash
+set -ex
+REGISTRY_PATH=some-gitlab-registry.example.org/dev/build
+DOCKER_OPTS=${DOCKER_OPTS:-}
+DOCKER_BUILD_OPTS=${DOCKER_BUILD_OPTS:-}
+cd docker
+for image in *; do
+  image=$(basename $image)
+  if [ "$image" == "with-testtools" ]; then
+    # ugly hack
+    rsync -r --delete build/build-scripts $image/
+    rsync -r --delete build/etc-extras $image/
+  fi
+  (cd $image && \
+    docker ${DOCKER_OPTS} build ${DOCKER_BUILD_OPTS} -t $REGISTRY_PATH:$image . && \
+    docker ${DOCKER_OPTS} push $REGISTRY_PATH:$image
+  )
+done
