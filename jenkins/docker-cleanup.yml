@@ -7,6 +7,7 @@ builders:
   - shell: |
       docker ps -f status=exited -q | xargs --no-run-if-empty docker rm || true
       docker images -q | xargs --no-run-if-empty docker rmi || true
+      docker volume ls -q -f dangling=true | xargs --no-run-if-empty docker volume rm || true
 wrappers:
   - timestamps
 logrotate:
